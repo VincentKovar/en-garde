@@ -65,6 +65,12 @@ export interface LevelConfig {
   enemyAttackCooldownMin: number;
   enemyAttackCooldownMax: number;
   enemyComboChance: number;
+  /** Chance the enemy turns the player's riposte aside and fires back (starts or extends a rally). */
+  enemyCounterParryChance: number;
+  /** Chance that an enemy block of a plain player strike is a parry that earns the enemy a quick riposte. */
+  enemyParryChance: number;
+  /** Chance an attack is a feint that switches target partway through the windup. */
+  enemyFeintChance: number;
   attackWeights: Record<StrikeZone, number>;
   palette: {
     armorPrimary: string;
@@ -111,7 +117,9 @@ export type CombatEventType =
   | 'stamina_exhausted'
   | 'player_retreat'
   | 'enemy_ko'
-  | 'player_ko';
+  | 'player_ko'
+  | 'enemy_parry'
+  | 'enemy_counter_parry';
 
 export interface CombatEvent {
   type: CombatEventType;
@@ -157,6 +165,13 @@ export interface DuelState {
   enemyNextAttackTimer: number;
   enemyPendingCombo: number;
   enemyLastGuardSwitchTimer: number;
+  /** Number of blade clashes in the current exchange (parry, counter-parry, parry...). */
+  rally: number;
+  /** Length of the enemy's current or most recent windup, used to judge parries fairly. */
+  enemyWindupDuration: number;
+  /** Seconds until the current windup switches target (feint); negative when no feint is pending. */
+  enemyFeintTimer: number;
+  bestRally: number;
   hitstopTimer: number;
   cameraTrauma: number;
   stats: DuelStats;

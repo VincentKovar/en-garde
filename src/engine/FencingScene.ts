@@ -515,6 +515,14 @@ export class FencingSceneController {
           this.spawnSparks(0, 1.35, 0.4, 24, 6.2);
           if (ev.callout) this.triggerCallout(ev.callout, 'gold');
           break;
+        case 'enemy_parry':
+        case 'enemy_counter_parry':
+          // Blades meet: bright clang and a shower of sparks between the duellists
+          soundEngine.playSteelClang(1.1, true);
+          haptics.trigger('parry');
+          this.spawnSparks(0, 1.33, -0.1, 22, 5.8);
+          if (ev.callout) this.triggerCallout(ev.callout, 'gold');
+          break;
         case 'retreat_counter':
           soundEngine.playRiposteReady();
           haptics.trigger('retreat_counter');
@@ -1037,6 +1045,21 @@ export class FencingSceneController {
     if (this.phase === 'playing') {
       stepDuelState(this.duelState, dt);
       this.processDuelEvents();
+
+      // Re-apply a guard the player is still holding once their own swing finishes,
+      // so they don't have to release and press the key or button again.
+      const pl = this.duelState.player;
+      if (
+        pl.action === 'idle' &&
+        pl.defense === 'none' &&
+        (this.touchDefense !== 'none' || this.heldKeys.size > 0) &&
+        // Retreat is a one-shot step, not a held guard
+        this.touchDefense !== 'retreat' &&
+        !this.heldKeys.has('KeyS') &&
+        !this.heldKeys.has('ArrowDown')
+      ) {
+        this.syncPlayerDefenseFromInputs();
+      }
 
       if (this.duelState.outcome !== 'ongoing' && this.duelState.koSequenceTimer <= 0) {
         this.setPhase(this.duelState.outcome === 'victory' ? 'victory' : 'gameover');

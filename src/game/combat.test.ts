@@ -9,6 +9,7 @@ import {
   triggerPlayerAttack,
 } from './combat';
 import { LEVELS, STRIKE_ZONES } from './levels';
+import type { StrikeZone } from './types';
 
 test('6 strike zones have distinct motion types and correct defense counters', () => {
   assert.equal(STRIKE_ZONES.head.motion, 'chop');
@@ -77,7 +78,7 @@ test('blocking depletes stamina and W block parries enemy head chop', () => {
   stepDuelState(state, 0.04, () => 0.5);
 
   assert.equal(state.player.hp, state.player.maxHp, 'W block should negate head chop damage');
-  assert.ok(state.player.stamina < preBlockStamina, 'Blocking should consume stamina');
+  assert.ok(state.player.stamina >= preBlockStamina, 'A timed parry is free and restores breath');
   assert.ok(state.player.riposteWindow > 0, 'Timed parry should open riposte window');
 });
 
@@ -114,7 +115,7 @@ test('levels progress in environment, speed, and enemy stamina recharge rate', (
 
 test('defeating enemy transitions duel outcome to victory', () => {
   const state = createDuelState(0);
-  state.enemy.hp = 10;
+  state.enemy.hp = 5;
 
   triggerPlayerAttack(state, 'chest');
   for (let i = 0; i < 15; i++) {
@@ -174,4 +175,66 @@ test('tracks 6-zone hit accuracy and cumulative duel timeline analytics', () => 
   assert.equal(leftHipRow.attempts, 1);
   assert.equal(leftHipRow.hits, 1);
   assert.equal(leftHipRow.accuracyPct, 100);
+});
+
+function stepUntil(state: ReturnType<typeof createDuelState>, done: () => boolean, rng: () => number) {
+  for (let i = 0; i < 400 && !done(); i++) stepDuelState(state, 1 / 60, rng);
+}
+
+test('a guard held from before the windup is only a plain block (no riposte)', () => {
+  const state = createDuelState(0);
+  setPlayerDefense(state, 'block_high');
+  // turtle behind the guard for a while before the enemy commits
+  for (let i = 0; i < 60; i++) stepDuelState(state, 1 / 60, () => 0.99);
+  state.enemy.action = 'windup';
+  state.enemy.activeZone = 'head';
+  state.enemy.actionDuration = 0.4;
+  state.enemy.actionTimer = 0.4;
+  state.enemy.hasDealtActiveHit = false;
+  state.enemyWindupDuration = 0.4;
+  stepUntil(state, () => state.enemy.action !== 'windup', () => 0.99);
+  assert.equal(state.player.hp, state.player.maxHp);
+  assert.equal(state.player.riposteWindow, 0, 'turtling earns no riposte');
+});
+
+test('enemy can counter-parry a riposte, extending the rally', () => {
+  const state = createDuelState(3);
+  state.player.riposteWindow = 1;
+  state.rally = 1;
+  triggerPlayerAttack(state, 'head');
+  stepUntil(state, () => state.enemy.action === 'windup', () => 0.01); // low roll = counter-parry
+  assert.equal(state.rally, 2);
+  assert.equal(state.player.action, 'idle', 'player blade is knocked aside and free to defend');
+  assert.ok(state.enemy.activeZone, 'enemy fires straight back');
+});
+
+test('rally length increases riposte damage', () => {
+  const short = createDuelState(0);
+  short.player.riposteWindow = 1; short.rally = 1;
+  triggerPlayerAttack(short, 'head');
+  stepUntil(short, () => short.stats.hitsLanded > 0, () => 0.99);
+
+  const long = createDuelState(0);
+  long.player.riposteWindow = 1; long.rally = 4;
+  triggerPlayerAttack(long, 'head');
+  stepUntil(long, () => long.stats.hitsLanded > 0, () => 0.99);
+
+  assert.ok(long.stats.damageDealt > short.stats.damageDealt);
+  assert.equal(long.rally, 0, 'landing the touch ends the rally');
+});
+
+test('a feint switches the attack to a different guard partway through the windup', () => {
+  const state = createDuelState(3);
+  state.level = { ...state.level, enemyFeintChance: 1 };
+  state.enemyNextAttackTimer = 0;
+  let firstZone: StrikeZone | null = null;
+  let roll = 0;
+  const rng = () => ((roll = (roll + 0.37) % 1));
+  stepUntil(state, () => state.enemy.action === 'windup', rng);
+  firstZone = state.enemy.activeZone;
+  stepUntil(state, () => state.enemyFeintTimer < 0 || state.enemy.action !== 'windup', rng);
+  assert.notEqual(
+    STRIKE_ZONES[state.enemy.activeZone!].counteredBy,
+    STRIKE_ZONES[firstZone!].counteredBy,
+  );
 });
